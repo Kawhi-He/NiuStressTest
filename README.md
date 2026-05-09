@@ -35,7 +35,74 @@ pip install pyserial
 
 这个脚本主要只需要 `pyserial`。
 
-### 3. 打开手机 USB 调试
+### 3. 安装 Java
+
+建议安装 JDK 17。
+
+安装后打开新的 PowerShell，执行：
+
+```powershell
+java -version
+```
+
+能看到版本号即可。
+
+如果提示找不到 `java`，需要把 Java 的 `bin` 目录加入系统环境变量 `Path`。
+
+### 4. 安装 Node.js
+
+安装 Node.js LTS 版本。
+
+安装后打开新的 PowerShell，执行：
+
+```powershell
+node -v
+npm -v
+```
+
+能看到版本号即可。
+
+### 5. 安装 Appium
+
+执行：
+
+```powershell
+npm install -g appium
+appium -v
+```
+
+然后安装 Android 自动化驱动：
+
+```powershell
+appium driver install uiautomator2
+appium driver list --installed
+```
+
+能看到 `uiautomator2` 就说明安装成功。
+
+启动 Appium 服务器：
+
+```powershell
+appium --address 127.0.0.1 --port 4723
+```
+
+注意：当前主脚本主要通过 `adb` 操作手机，不强依赖 Appium 服务器一直开着；但如果后续切换到 Appium 自动化，这个环境必须准备好。
+
+### 6. 安装 Android SDK Platform Tools
+
+脚本需要用到 `adb`。
+
+推荐安装 Android SDK Platform Tools，然后把 `platform-tools` 目录加入系统环境变量 `Path`。
+
+验证：
+
+```powershell
+adb version
+```
+
+能看到版本号即可。
+
+### 7. 打开手机 USB 调试
 
 手机需要：
 
@@ -51,6 +118,13 @@ adb devices
 ```
 
 如果能看到手机序列号和 `device`，说明连接正常。
+
+示例：
+
+```text
+List of devices attached
+10AD8G18YC001N1    device
+```
 
 ## 这个仓库里有什么
 
