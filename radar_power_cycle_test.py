@@ -28,9 +28,11 @@ STRESS_MODE：
 
 import argparse
 import csv
+import ctypes
 import datetime
 import logging
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -41,10 +43,13 @@ from programmable_power import ItechIt6121B
 APP_LOG_LEVEL = 25
 logging.addLevelName(APP_LOG_LEVEL, "APP_LOG")
 LOCAL_TZ = datetime.timezone(datetime.timedelta(hours=8), name="Asia/Shanghai")
+ES_CONTINUOUS = 0x80000000
+ES_SYSTEM_REQUIRED = 0x00000001
+ES_DISPLAY_REQUIRED = 0x00000002
 
 # ===== 测试工程师配置区 =====
 # 压力选择：0=两个压力串行跑；1=OTA升级杀后台压力；2=断电上电读取雷达状态压力
-DEFAULT_STRESS_MODE = 2
+DEFAULT_STRESS_MODE = 1
 
 # 压力 2 默认循环次数
 DEFAULT_ITERATIONS = 100
@@ -81,6 +86,49 @@ DEFAULT_LOG_DIR = "logs"
 
 def timestamp() -> str:
     return datetime.datetime.now(LOCAL_TZ).isoformat(timespec="milliseconds")
+
+
+class WindowsAwakeGuard:
+    HEARTBEAT_INTERVAL = 30
+
+    def __init__(self, logger: logging.Logger) -> None:
+        self.logger = logger
+        self.enabled = False
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def enable(self) -> None:
+        if sys.platform != "win32":
+            return
+        flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+        result = ctypes.windll.kernel32.SetThreadExecutionState(flags)
+        if result == 0:
+            self.logger.warning("Failed to request Windows awake/display-on state")
+            return
+        self.enabled = True
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._heartbeat, daemon=True)
+        self._thread.start()
+        self.logger.info("Windows awake guard enabled: prevent sleep and display off while test is running")
+
+    def disable(self) -> None:
+        if not self.enabled or sys.platform != "win32":
+            return
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+            self._thread = None
+        result = ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+        if result == 0:
+            self.logger.warning("Failed to restore Windows execution state")
+            return
+        self.enabled = False
+        self.logger.info("Windows awake guard disabled")
+
+    def _heartbeat(self) -> None:
+        while not self._stop_event.wait(self.HEARTBEAT_INTERVAL):
+            flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+            ctypes.windll.kernel32.SetThreadExecutionState(flags)
 
 
 class TimezoneFormatter(logging.Formatter):
@@ -144,6 +192,8 @@ def append_csv_row(path: Path, row: dict[str, object]) -> None:
         "iteration",
         "ota_target_percent",
         "ota_killed_progress",
+        "ota_baseline_seconds",
+        "ota_killed_elapsed_seconds",
         "status",
         "hub_rcu_bsd_length",
         "hub_rcu_rcw_length",
@@ -284,14 +334,22 @@ def run_ota_kill_app_stress(
     power: ItechIt6121B,
     state: dict[str, Any],
 ) -> tuple[int, int]:
-    logger.info("===== Start stress 1: OTA kill-app every percent =====")
+    logger.info("===== Start stress 1: OTA timed kill-app every percent =====")
     pass_count = 0
     fail_count = 0
     percents = range(args.ota_kill_start_percent, args.ota_kill_end_percent + 1, args.ota_kill_step_percent)
     state["stress_name"] = "stress_1_ota_kill_app"
 
+    logger.info("===== Stress 1 baseline: run one full OTA to measure upgrade time =====")
+    state["current_item"] = "baseline ota"
+    state["step"] = "measure ota baseline"
+    state["last_result"] = "IN_PROGRESS"
+    bletools.prepare_ota_upgrade()
+    baseline_seconds = bletools.run_ota_upgrade_to_success(timeout_seconds=args.ota_monitor_timeout)
+    logger.info("Stress 1 baseline OTA elapsed time: %.3fs", baseline_seconds)
+
     for index, percent in enumerate(percents, start=1):
-        logger.info("===== Stress 1 point %s: kill app at OTA progress >= %s%% =====", index, percent)
+        logger.info("===== Stress 1 point %s: kill app at %s%% of baseline OTA time =====", index, percent)
         state["current_item"] = f"target {percent}%"
         state["step"] = "prepare ota"
         state["last_result"] = "IN_PROGRESS"
@@ -301,6 +359,8 @@ def run_ota_kill_app_stress(
             "iteration": percent,
             "ota_target_percent": percent,
             "ota_killed_progress": "",
+            "ota_baseline_seconds": f"{baseline_seconds:.3f}",
+            "ota_killed_elapsed_seconds": "",
             "status": "FAIL",
             "hub_rcu_bsd_length": "",
             "hub_rcu_rcw_length": "",
@@ -310,12 +370,15 @@ def run_ota_kill_app_stress(
 
         try:
             bletools.prepare_ota_upgrade()
-            state["step"] = "start ota"
-            bletools.start_ota_upgrade()
-            state["step"] = f"wait ota >= {percent}%"
-            killed_progress = bletools.kill_app_at_ota_progress(percent, timeout_seconds=args.ota_monitor_timeout)
-            row["ota_killed_progress"] = f"{killed_progress:.1f}"
-            logger.info("Killed app at OTA progress %.1f%% for target %s%%", killed_progress, percent)
+            state["step"] = f"wait ota elapsed {percent}%"
+            killed_elapsed_seconds = bletools.kill_app_at_ota_elapsed_percent(percent, baseline_seconds)
+            row["ota_killed_elapsed_seconds"] = f"{killed_elapsed_seconds:.3f}"
+            logger.info(
+                "Killed app after %.3fs for target %s%% of baseline %.3fs",
+                killed_elapsed_seconds,
+                percent,
+                baseline_seconds,
+            )
 
             state["step"] = "restart ota"
             bletools.prepare_ota_upgrade()
@@ -338,7 +401,7 @@ def run_ota_kill_app_stress(
             pass_count += 1
             state["pass_count"] = pass_count
             state["last_result"] = "PASS"
-            logger.info("Stress 1 PASS target=%s killed_progress=%.1f values=%s", percent, killed_progress, values)
+            logger.info("Stress 1 PASS target=%s killed_elapsed=%.3fs values=%s", percent, killed_elapsed_seconds, values)
             log_app(logger, app_log)
         except Exception as exc:
             fail_count += 1
@@ -403,6 +466,8 @@ def main() -> int:
     logger.info("Start test: iterations=%s, voltage=%.3fV, current=%.3fA", args.iterations, args.voltage, args.current)
     logger.info("Stress mode=%s (0=stress1+stress2, 1=OTA kill app, 2=power-cycle read)", args.stress_mode)
     logger.info("Target commands: %s", ", ".join(TARGET_COMMANDS.values()))
+    awake_guard = WindowsAwakeGuard(logger)
+    awake_guard.enable()
 
     try:
         bletools.check_device()
@@ -428,6 +493,7 @@ def main() -> int:
         print(f"CTRL+C current status: {build_status_line(state)}", flush=True)
         return 130
     finally:
+        awake_guard.disable()
         power.close()
 
 

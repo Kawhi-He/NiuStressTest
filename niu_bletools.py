@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 import json
 import logging
+import queue
 import re
 import subprocess
+import threading
 import time
 import xml.etree.ElementTree as ET
 
@@ -38,16 +40,25 @@ class NiuBleTools:
         self.last_app_log_lines = []
         time.sleep(0.5)
 
-    def run_adb(self, *args: str, timeout: int = 30) -> str:
-        result = subprocess.run(
-            ["adb", "-s", self.device_id, *args],
-            check=True,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-        )
-        return result.stdout.strip()
+    def run_adb(self, *args: str, timeout: int = 30, retries: int = 3, retry_delay: float = 2.0) -> str:
+        last_exc: Exception | None = None
+        for attempt in range(1, retries + 1):
+            try:
+                result = subprocess.run(
+                    ["adb", "-s", self.device_id, *args],
+                    check=True,
+                    capture_output=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=timeout,
+                )
+                return result.stdout.strip()
+            except subprocess.CalledProcessError as exc:
+                last_exc = exc
+                if attempt < retries:
+                    self.log("WARNING", f"ADB command failed (attempt {attempt}/{retries}): {exc.cmd} -> exit {exc.returncode}; retrying in {retry_delay}s")
+                    time.sleep(retry_delay)
+        raise last_exc  # type: ignore[misc]
 
     def run_adb_bytes(self, *args: str, timeout: int = 30) -> bytes:
         result = subprocess.run(
@@ -77,6 +88,7 @@ class NiuBleTools:
     def open_app(self) -> None:
         self.log("INFO", "Open NIUBleTools app")
         self.run_adb("shell", "am", "start", "-W", "-n", f"{APP_PACKAGE}/{MAIN_ACTIVITY}")
+        self.read_commands_selected = False
         time.sleep(0.8)
 
     def open_app_fresh(self) -> None:
@@ -153,6 +165,7 @@ class NiuBleTools:
         self.ensure_read_commands_selected()
 
         self.tap_by_id(self.id("okBtn"), "确定")
+        self.read_commands_selected = False
         try:
             final_log = self.wait_read_result(previous_log, 30)
         except RuntimeError:
@@ -211,30 +224,67 @@ class NiuBleTools:
         progress = self.monitor_ota_progress(target_percent=target_percent, timeout_seconds=timeout_seconds, kill_on_target=True)
         return progress
 
-    def run_ota_upgrade_to_success(self, timeout_seconds: int = 180) -> None:
-        self.log("INFO", "Run OTA upgrade to success")
+    def kill_app_at_ota_elapsed_percent(self, target_percent: int, baseline_seconds: float) -> float:
+        target_delay = baseline_seconds * target_percent / 100.0
+        self.log("INFO", f"Start OTA and kill app after {target_delay:.3f}s ({target_percent}% of baseline {baseline_seconds:.3f}s)")
+        start_time = time.monotonic()
         self.start_ota_upgrade()
-        self.monitor_ota_progress(target_percent=None, timeout_seconds=timeout_seconds, kill_on_target=False)
+        remaining_seconds = target_delay - (time.monotonic() - start_time)
+        if remaining_seconds > 0:
+            time.sleep(remaining_seconds)
+        elapsed_seconds = time.monotonic() - start_time
+        self.force_stop_app()
+        return elapsed_seconds
+
+    def run_ota_upgrade_to_success(self, timeout_seconds: int = 180, max_retries: int = 3) -> float:
+        self.log("INFO", "Run OTA upgrade to success")
+        start_time = time.monotonic()
+        self.start_ota_upgrade()
+        last_exc: Exception | None = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                self.monitor_ota_progress(target_percent=None, timeout_seconds=timeout_seconds, kill_on_target=False)
+                elapsed_seconds = time.monotonic() - start_time
+                self.log("INFO", f"OTA upgrade elapsed time: {elapsed_seconds:.3f}s")
+                return elapsed_seconds
+            except RuntimeError as exc:
+                last_exc = exc
+                if attempt < max_retries:
+                    self.log("WARNING", f"OTA monitor failed (attempt {attempt}/{max_retries}): {exc}; retrying with fresh logcat")
+                    self.run_adb("logcat", "-c")
+                    time.sleep(1)
+                else:
+                    raise
 
     def monitor_ota_progress(self, target_percent: int | None, timeout_seconds: int, kill_on_target: bool) -> float:
-        process = subprocess.Popen(
-            ["adb", "-s", self.device_id, "logcat", "-v", "time", "NiuBleOtaManager:E", "BleOtaActivity:I", "*:S"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            encoding="utf-8",
-            errors="replace",
-        )
+        process = self._start_logcat_process()
         deadline = time.time() + timeout_seconds
         last_progress = 0.0
         last_bucket = -1
+        line_queue: queue.Queue[str] = queue.Queue()
+        last_output_time = time.time()
+
+        def read_logcat_stdout() -> None:
+            if process.stdout is None:
+                return
+            for line in process.stdout:
+                line_queue.put(line)
+
+        reader = threading.Thread(target=read_logcat_stdout, daemon=True)
+        reader.start()
         try:
             while time.time() < deadline:
-                line = process.stdout.readline() if process.stdout else ""
-                if not line:
+                try:
+                    line = line_queue.get(timeout=0.2)
+                except queue.Empty:
                     if process.poll() is not None:
-                        raise RuntimeError("logcat process exited while monitoring OTA")
-                    time.sleep(0.05)
+                        self.log("WARNING", "logcat process exited; restarting logcat")
+                        process = self._restart_logcat(process, line_queue)
+                        reader = threading.Thread(target=read_logcat_stdout, daemon=True)
+                        reader.start()
+                        continue
                     continue
+                last_output_time = time.time()
                 line = line.strip()
 
                 progress = self.parse_ota_packet_progress(line)
@@ -260,6 +310,29 @@ class NiuBleTools:
                 process.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 process.kill()
+
+    def _start_logcat_process(self) -> subprocess.Popen:
+        return subprocess.Popen(
+            ["adb", "-s", self.device_id, "logcat", "-v", "time", "NiuBleOtaManager:E", "BleOtaActivity:I", "*:S"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+    def _restart_logcat(self, old_process: subprocess.Popen, line_queue: queue.Queue) -> subprocess.Popen:
+        old_process.terminate()
+        try:
+            old_process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            old_process.kill()
+        while not line_queue.empty():
+            try:
+                line_queue.get_nowait()
+            except queue.Empty:
+                break
+        time.sleep(0.5)
+        return self._start_logcat_process()
 
     @staticmethod
     def parse_ota_packet_progress(line: str) -> float | None:
