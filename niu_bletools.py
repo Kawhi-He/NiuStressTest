@@ -100,7 +100,13 @@ class NiuBleTools:
             except subprocess.CalledProcessError as exc:
                 last_exc = exc
                 if attempt < retries:
-                    self.log("WARNING", f"ADB command failed (attempt {attempt}/{retries}): {exc.cmd} -> exit {exc.returncode}; retrying in {retry_delay}s")
+                    self.log(
+                        "WARNING",
+                        "ADB command failed "
+                        f"(attempt {attempt}/{retries}): {exc.cmd} "
+                        f"-> exit {exc.returncode}; "
+                        f"retrying in {retry_delay}s",
+                    )
                     time.sleep(retry_delay)
         raise last_exc  # type: ignore[misc]
 
@@ -203,7 +209,10 @@ class NiuBleTools:
         """
         for _ in range(4):
             root = self.dump_ui()
-            if self.find_node_by_text(root, TARGET_MENU_TEXT) is not None and self.find_node_by_text(root, OTA_MENU_TEXT) is not None:
+            if (
+                self.find_node_by_text(root, TARGET_MENU_TEXT) is not None
+                and self.find_node_by_text(root, OTA_MENU_TEXT) is not None
+            ):
                 return
             self.run_adb("shell", "input", "keyevent", "BACK")
             time.sleep(0.4)
@@ -221,7 +230,10 @@ class NiuBleTools:
         """
         self.return_home_if_needed()
         root = self.dump_ui()
-        if self.find_node_by_text(root, TARGET_MENU_TEXT) is not None and self.find_node_by_id(root, self.id("connectBtn")) is not None:
+        if (
+            self.find_node_by_text(root, TARGET_MENU_TEXT) is not None
+            and self.find_node_by_id(root, self.id("connectBtn")) is not None
+        ):
             return
 
         target = self.find_node_and_parent_by_text(root, TARGET_MENU_TEXT)
@@ -229,12 +241,19 @@ class NiuBleTools:
             raise RuntimeError(f"Home page entry not found: {TARGET_MENU_TEXT}")
 
         target_node, parent_node = target
-        self.tap_node(parent_node if parent_node is not None else target_node, TARGET_MENU_TEXT)
+        self.tap_node(
+            parent_node if parent_node is not None else target_node,
+            TARGET_MENU_TEXT,
+        )
 
         deadline = time.time() + 20
         while time.time() < deadline:
             root = self.dump_ui()
-            if self.find_node_by_text(root, TARGET_MENU_TEXT) is not None and self.find_node_by_id(root, self.id("connectBtn")) is not None:
+            if (
+                self.find_node_by_text(root, TARGET_MENU_TEXT) is not None
+                and self.find_node_by_id(root, self.id("connectBtn"))
+                is not None
+            ):
                 return
             time.sleep(0.3)
         raise RuntimeError("Timed out waiting for Radar RCU page")
@@ -252,7 +271,10 @@ class NiuBleTools:
         """
         self.return_home_if_needed()
         root = self.dump_ui()
-        if self.find_node_by_text(root, OTA_MENU_TEXT) is not None and self.find_node_by_id(root, self.id("otaStart")) is not None:
+        if (
+            self.find_node_by_text(root, OTA_MENU_TEXT) is not None
+            and self.find_node_by_id(root, self.id("otaStart")) is not None
+        ):
             return
 
         target = self.find_node_and_parent_by_text(root, OTA_MENU_TEXT)
@@ -265,7 +287,10 @@ class NiuBleTools:
         deadline = time.time() + 20
         while time.time() < deadline:
             root = self.dump_ui()
-            if self.find_node_by_text(root, OTA_MENU_TEXT) is not None and self.find_node_by_id(root, self.id("otaStart")) is not None:
+            if (
+                self.find_node_by_text(root, OTA_MENU_TEXT) is not None
+                and self.find_node_by_id(root, self.id("otaStart")) is not None
+            ):
                 return
             time.sleep(0.3)
         raise RuntimeError("Timed out waiting for OTA page")
@@ -417,7 +442,11 @@ class NiuBleTools:
             Progress percentage when trigger happened.
         """
         self.log("INFO", f"Wait OTA progress >= {target_percent}% then kill app")
-        progress = self.monitor_ota_progress(target_percent=target_percent, timeout_seconds=timeout_seconds, kill_on_target=True)
+        progress = self.monitor_ota_progress(
+            target_percent=target_percent,
+            timeout_seconds=timeout_seconds,
+            kill_on_target=True,
+        )
         return progress
 
     def kill_app_at_ota_elapsed_percent(self, target_percent: int, baseline_seconds: float) -> float:
@@ -433,7 +462,12 @@ class NiuBleTools:
             Actual elapsed seconds when app was force-stopped.
         """
         target_delay = baseline_seconds * target_percent / 100.0
-        self.log("INFO", f"Start OTA and kill app after {target_delay:.3f}s ({target_percent}% of baseline {baseline_seconds:.3f}s)")
+        self.log(
+            "INFO",
+            "Start OTA and kill app after "
+            f"{target_delay:.3f}s ({target_percent}% of "
+            f"baseline {baseline_seconds:.3f}s)",
+        )
         start_time = time.monotonic()
         self.start_ota_upgrade()
         remaining_seconds = target_delay - (time.monotonic() - start_time)
@@ -458,7 +492,6 @@ class NiuBleTools:
         self.log("INFO", "Run OTA upgrade to success")
         start_time = time.monotonic()
         self.start_ota_upgrade()
-        last_exc: Exception | None = None
         for attempt in range(1, max_retries + 1):
             try:
                 self.monitor_ota_progress(target_percent=None, timeout_seconds=timeout_seconds, kill_on_target=False)
@@ -466,9 +499,13 @@ class NiuBleTools:
                 self.log("INFO", f"OTA upgrade elapsed time: {elapsed_seconds:.3f}s")
                 return elapsed_seconds
             except RuntimeError as exc:
-                last_exc = exc
                 if attempt < max_retries:
-                    self.log("WARNING", f"OTA monitor failed (attempt {attempt}/{max_retries}): {exc}; retrying with fresh logcat")
+                    self.log(
+                        "WARNING",
+                        "OTA monitor failed "
+                        f"(attempt {attempt}/{max_retries}): {exc}; "
+                        "retrying with fresh logcat",
+                    )
                     self.run_adb("logcat", "-c")
                     time.sleep(1)
                 else:
@@ -492,7 +529,6 @@ class NiuBleTools:
         last_progress = 0.0
         last_bucket = -1
         line_queue: queue.Queue[str] = queue.Queue()
-        last_output_time = time.time()
 
         def read_logcat_stdout() -> None:
             """Read logcat stdout continuously and enqueue each line.
@@ -524,7 +560,6 @@ class NiuBleTools:
                         reader.start()
                         continue
                     continue
-                last_output_time = time.time()
                 line = line.strip()
 
                 progress = self.parse_ota_packet_progress(line)

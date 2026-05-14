@@ -187,13 +187,18 @@ class WindowsAwakeGuard:
         flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
         result = ctypes.windll.kernel32.SetThreadExecutionState(flags)
         if result == 0:
-            self.logger.warning("Failed to request Windows awake/display-on state")
+            self.logger.warning(
+                "Failed to request Windows awake/display-on state"
+            )
             return
         self.enabled = True
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._heartbeat, daemon=True)
         self._thread.start()
-        self.logger.info("Windows awake guard enabled: prevent sleep and display off while test is running")
+        self.logger.info(
+            "Windows awake guard enabled: "
+            "prevent sleep and display off while test is running"
+        )
 
     def disable(self) -> None:
         """Disable awake guard and restore default Windows execution state.
@@ -243,14 +248,19 @@ class TimezoneFormatter(logging.Formatter):
 
     converter = None
 
-    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+    def formatTime(
+        self,
+        record: logging.LogRecord,
+        datefmt: str | None = None,
+    ) -> str:
         """Format log record creation time using LOCAL_TZ timezone.
 
         Author: Kawhi.He
 
         Args:
             record (logging.LogRecord): Logging record to format.
-            datefmt (str | None): Optional date format string (unused, kept for compatibility).
+            datefmt (str | None): Optional date format string
+                (unused, kept for compatibility).
 
         Returns:
             Formatted ISO timestamp with milliseconds.
@@ -304,10 +314,10 @@ def log_app(logger: logging.Logger, app_log: str) -> None:
         None.
     """
     # NiuBleTools.read_log() already emits incremental APP_LOG lines.
-    # Keep this helper for compatibility, but avoid duplicating large APP logs.
+    # Keep this helper for compatibility without duplicating large app logs.
+    del logger
+    del app_log
     return
-    for line in app_log.splitlines():
-        logger.log(APP_LOG_LEVEL, line)
 
 
 def build_status_line(state: dict[str, Any]) -> str:
@@ -316,7 +326,8 @@ def build_status_line(state: dict[str, Any]) -> str:
     Author: Kawhi.He
 
     Args:
-        state (dict[str, Any]): Mutable status dictionary shared by stress flows.
+        state (dict[str, Any]): Mutable status dictionary shared by
+            stress flows.
 
     Returns:
         Human-readable status line string.
@@ -331,7 +342,10 @@ def build_status_line(state: dict[str, Any]) -> str:
     )
 
 
-def log_interrupt_summary(logger: logging.Logger, state: dict[str, Any]) -> None:
+def log_interrupt_summary(
+    logger: logging.Logger,
+    state: dict[str, Any],
+) -> None:
     """Log summary when user interrupts execution with Ctrl+C.
 
     Author: Kawhi.He
@@ -354,7 +368,8 @@ def append_csv_row(path: Path, row: dict[str, object]) -> None:
 
     Args:
         path (Path): CSV file path.
-        row (dict[str, object]): Row dictionary following predefined field names.
+        row (dict[str, object]): Row dictionary following predefined
+            field names.
 
     Returns:
         None.
@@ -415,7 +430,11 @@ def read_voltage_or_raise(power: ItechIt6121B) -> float:
     return voltage
 
 
-def assert_power_off(power: ItechIt6121B, max_voltage: float, logger: logging.Logger) -> float:
+def assert_power_off(
+    power: ItechIt6121B,
+    max_voltage: float,
+    logger: logging.Logger,
+) -> float:
     """Validate power-off state by checking voltage below threshold.
 
     Author: Kawhi.He
@@ -430,13 +449,25 @@ def assert_power_off(power: ItechIt6121B, max_voltage: float, logger: logging.Lo
     """
     voltage = read_voltage_or_raise(power)
     current = power.read_actual_current()
-    logger.debug("Measured after power off: voltage=%.3f V, current=%s A", voltage, "N/A" if current is None else f"{current:.3f}")
+    logger.debug(
+        "Measured after power off: voltage=%.3f V, current=%s A",
+        voltage,
+        "N/A" if current is None else f"{current:.3f}",
+    )
     if voltage > max_voltage:
-        raise RuntimeError(f"Power off verification failed: voltage={voltage:.3f} V > {max_voltage:.3f} V")
+        raise RuntimeError(
+            "Power off verification failed: "
+            f"voltage={voltage:.3f} V > {max_voltage:.3f} V"
+        )
     return voltage
 
 
-def assert_power_on(power: ItechIt6121B, expected_voltage: float, tolerance: float, logger: logging.Logger) -> float:
+def assert_power_on(
+    power: ItechIt6121B,
+    expected_voltage: float,
+    tolerance: float,
+    logger: logging.Logger,
+) -> float:
     """Validate power-on state by checking voltage around target range.
 
     Author: Kawhi.He
@@ -452,22 +483,34 @@ def assert_power_on(power: ItechIt6121B, expected_voltage: float, tolerance: flo
     """
     voltage = read_voltage_or_raise(power)
     current = power.read_actual_current()
-    logger.debug("Measured after power on: voltage=%.3f V, current=%s A", voltage, "N/A" if current is None else f"{current:.3f}")
+    logger.debug(
+        "Measured after power on: voltage=%.3f V, current=%s A",
+        voltage,
+        "N/A" if current is None else f"{current:.3f}",
+    )
     low = expected_voltage - tolerance
     high = expected_voltage + tolerance
     if not low <= voltage <= high:
-        raise RuntimeError(f"Power on verification failed: voltage={voltage:.3f} V not in [{low:.3f}, {high:.3f}] V")
+        raise RuntimeError(
+            "Power on verification failed: "
+            f"voltage={voltage:.3f} V not in [{low:.3f}, {high:.3f}] V"
+        )
     return voltage
 
 
-def power_cycle_and_verify(power: ItechIt6121B, args: argparse.Namespace, logger: logging.Logger) -> tuple[float, float]:
+def power_cycle_and_verify(
+    power: ItechIt6121B,
+    args: argparse.Namespace,
+    logger: logging.Logger,
+) -> tuple[float, float]:
     """Perform one full power off/on sequence and verify voltages.
 
     Author: Kawhi.He
 
     Args:
         power (ItechIt6121B): Programmable power controller instance.
-        args (argparse.Namespace): Parsed CLI args containing power timing and threshold settings.
+        args (argparse.Namespace): Parsed CLI args containing power
+            timing and threshold settings.
         logger (logging.Logger): Logger used for progress and measurements.
 
     Returns:
@@ -483,7 +526,12 @@ def power_cycle_and_verify(power: ItechIt6121B, args: argparse.Namespace, logger
     power.configure_output(args.voltage, args.current)
     power.output_on()
     time.sleep(args.power_on_wait)
-    on_voltage = assert_power_on(power, args.voltage, args.power_on_tolerance, logger)
+    on_voltage = assert_power_on(
+        power,
+        args.voltage,
+        args.power_on_tolerance,
+        logger,
+    )
     logger.info("Power ON verified: voltage=%.3f V", on_voltage)
     return off_voltage, on_voltage
 
@@ -525,13 +573,20 @@ def run_power_cycle_read_stress(
     Returns:
         Tuple of (pass_count, fail_count).
     """
-    logger.info("===== Start stress 2: power-cycle read Radar RCU values =====")
+    logger.info(
+        "===== Start stress 2: "
+        "power-cycle read Radar RCU values ====="
+    )
     pass_count = 0
     fail_count = 0
     state["stress_name"] = "stress_2_power_cycle_read"
 
     for iteration in range(1, args.iterations + 1):
-        logger.info("===== Stress 2 iteration %s/%s =====", iteration, args.iterations)
+        logger.info(
+            "===== Stress 2 iteration %s/%s =====",
+            iteration,
+            args.iterations,
+        )
         state["current_item"] = f"iteration {iteration}/{args.iterations}"
         state["step"] = "power cycle"
         state["last_result"] = "IN_PROGRESS"
@@ -565,7 +620,7 @@ def run_power_cycle_read_stress(
             state["last_result"] = "PASS"
             logger.info("Stress 2 PASS values=%s", values)
             log_app(logger, app_log)
-        except Exception as exc:
+        except RuntimeError as exc:
             fail_count += 1
             state["fail_count"] = fail_count
             state["last_result"] = "FAIL"
@@ -577,7 +632,12 @@ def run_power_cycle_read_stress(
         finally:
             append_csv_row(csv_log, row)
 
-    logger.info("Stress 2 finished: pass=%s, fail=%s, total=%s", pass_count, fail_count, args.iterations)
+    logger.info(
+        "Stress 2 finished: pass=%s, fail=%s, total=%s",
+        pass_count,
+        fail_count,
+        args.iterations,
+    )
     return pass_count, fail_count
 
 
@@ -604,22 +664,38 @@ def run_ota_kill_app_stress(
     Returns:
         Tuple of (pass_count, fail_count).
     """
-    logger.info("===== Start stress 1: OTA timed kill-app every percent =====")
+    logger.info(
+        "===== Start stress 1: OTA timed kill-app every percent ====="
+    )
     pass_count = 0
     fail_count = 0
-    percents = range(args.ota_kill_start_percent, args.ota_kill_end_percent + 1, args.ota_kill_step_percent)
+    percents = range(
+        args.ota_kill_start_percent,
+        args.ota_kill_end_percent + 1,
+        args.ota_kill_step_percent,
+    )
     state["stress_name"] = "stress_1_ota_kill_app"
 
-    logger.info("===== Stress 1 baseline: run one full OTA to measure upgrade time =====")
+    logger.info(
+        "===== Stress 1 baseline: "
+        "run one full OTA to measure upgrade time ====="
+    )
     state["current_item"] = "baseline ota"
     state["step"] = "measure ota baseline"
     state["last_result"] = "IN_PROGRESS"
     bletools.prepare_ota_upgrade()
-    baseline_seconds = bletools.run_ota_upgrade_to_success(timeout_seconds=args.ota_monitor_timeout)
+    baseline_seconds = bletools.run_ota_upgrade_to_success(
+        timeout_seconds=args.ota_monitor_timeout
+    )
     logger.info("Stress 1 baseline OTA elapsed time: %.3fs", baseline_seconds)
 
     for index, percent in enumerate(percents, start=1):
-        logger.info("===== Stress 1 point %s: kill app at %s%% of baseline OTA time =====", index, percent)
+        logger.info(
+            "===== Stress 1 point %s: "
+            "kill app at %s%% of baseline OTA time =====",
+            index,
+            percent,
+        )
         state["current_item"] = f"target {percent}%"
         state["step"] = "prepare ota"
         state["last_result"] = "IN_PROGRESS"
@@ -641,7 +717,10 @@ def run_ota_kill_app_stress(
         try:
             bletools.prepare_ota_upgrade()
             state["step"] = f"wait ota elapsed {percent}%"
-            killed_elapsed_seconds = bletools.kill_app_at_ota_elapsed_percent(percent, baseline_seconds)
+            killed_elapsed_seconds = bletools.kill_app_at_ota_elapsed_percent(
+                percent,
+                baseline_seconds,
+            )
             row["ota_killed_elapsed_seconds"] = f"{killed_elapsed_seconds:.3f}"
             logger.info(
                 "Killed app after %.3fs for target %s%% of baseline %.3fs",
@@ -652,7 +731,9 @@ def run_ota_kill_app_stress(
 
             state["step"] = "restart ota"
             bletools.prepare_ota_upgrade()
-            bletools.run_ota_upgrade_to_success(timeout_seconds=args.ota_monitor_timeout)
+            bletools.run_ota_upgrade_to_success(
+                timeout_seconds=args.ota_monitor_timeout
+            )
 
             state["step"] = "power cycle"
             power_cycle_and_verify(power, args, logger)
@@ -671,9 +752,14 @@ def run_ota_kill_app_stress(
             pass_count += 1
             state["pass_count"] = pass_count
             state["last_result"] = "PASS"
-            logger.info("Stress 1 PASS target=%s killed_elapsed=%.3fs values=%s", percent, killed_elapsed_seconds, values)
+            logger.info(
+                "Stress 1 PASS target=%s killed_elapsed=%.3fs values=%s",
+                percent,
+                killed_elapsed_seconds,
+                values,
+            )
             log_app(logger, app_log)
-        except Exception as exc:
+        except RuntimeError as exc:
             fail_count += 1
             state["fail_count"] = fail_count
             state["last_result"] = "FAIL"
@@ -700,24 +786,138 @@ def parse_args() -> argparse.Namespace:
     Returns:
         Parsed argparse namespace.
     """
-    parser = argparse.ArgumentParser(description="Radar RCU stress test runner.")
-    parser.add_argument("--stress-mode", type=int, choices=(0, 1, 2), default=DEFAULT_STRESS_MODE, help=f"0=run stress 1 and 2, 1=OTA kill app stress, 2=power cycle read stress. Default: {DEFAULT_STRESS_MODE}")
-    parser.add_argument("--iterations", type=int, default=DEFAULT_ITERATIONS, help=f"Loop count. Default: {DEFAULT_ITERATIONS}")
-    parser.add_argument("--device-id", default=DEFAULT_DEVICE_ID, help=f"ADB device id. Default: {DEFAULT_DEVICE_ID}")
-    parser.add_argument("--power-port", default=DEFAULT_POWER_PORT, help=f"Programmable power supply serial port. Default: {DEFAULT_POWER_PORT}")
-    parser.add_argument("--baudrate", type=int, default=DEFAULT_BAUDRATE, help=f"Power supply baudrate. Default: {DEFAULT_BAUDRATE}")
-    parser.add_argument("--voltage", type=float, default=DEFAULT_VOLTAGE, help=f"Power-on voltage. Default: {DEFAULT_VOLTAGE}")
-    parser.add_argument("--current", type=float, default=DEFAULT_CURRENT, help=f"Current limit. Default: {DEFAULT_CURRENT}")
-    parser.add_argument("--power-off-wait", type=float, default=DEFAULT_POWER_OFF_WAIT_SECONDS, help=f"Wait seconds after power off. Default: {DEFAULT_POWER_OFF_WAIT_SECONDS}")
-    parser.add_argument("--power-on-wait", type=float, default=DEFAULT_POWER_ON_WAIT_SECONDS, help=f"Wait seconds after power on. Default: {DEFAULT_POWER_ON_WAIT_SECONDS}")
-    parser.add_argument("--power-off-max-voltage", type=float, default=DEFAULT_POWER_OFF_MAX_VOLTAGE, help=f"Max voltage allowed after power off. Default: {DEFAULT_POWER_OFF_MAX_VOLTAGE}")
-    parser.add_argument("--power-on-tolerance", type=float, default=DEFAULT_POWER_ON_TOLERANCE, help=f"Allowed voltage tolerance after power on. Default: +/-{DEFAULT_POWER_ON_TOLERANCE}")
-    parser.add_argument("--ota-kill-start-percent", type=int, default=DEFAULT_OTA_KILL_START_PERCENT, help=f"OTA kill start percent. Default: {DEFAULT_OTA_KILL_START_PERCENT}")
-    parser.add_argument("--ota-kill-end-percent", type=int, default=DEFAULT_OTA_KILL_END_PERCENT, help=f"OTA kill end percent. Default: {DEFAULT_OTA_KILL_END_PERCENT}")
-    parser.add_argument("--ota-kill-step-percent", type=int, default=DEFAULT_OTA_KILL_STEP_PERCENT, help=f"OTA kill step percent. Default: {DEFAULT_OTA_KILL_STEP_PERCENT}")
-    parser.add_argument("--ota-monitor-timeout", type=int, default=DEFAULT_OTA_MONITOR_TIMEOUT_SECONDS, help=f"OTA monitor timeout seconds. Default: {DEFAULT_OTA_MONITOR_TIMEOUT_SECONDS}")
-    parser.add_argument("--log-dir", default=DEFAULT_LOG_DIR, help=f"Output log directory. Default: {DEFAULT_LOG_DIR}")
-    parser.add_argument("--stop-on-fail", action="store_true", help="Stop immediately after a failed iteration.")
+    parser = argparse.ArgumentParser(
+        description="Radar RCU stress test runner."
+    )
+    parser.add_argument(
+        "--stress-mode",
+        type=int,
+        choices=(0, 1, 2),
+        default=DEFAULT_STRESS_MODE,
+        help=(
+            "0=run stress 1 and 2, 1=OTA kill app stress, "
+            f"2=power cycle read stress. Default: {DEFAULT_STRESS_MODE}"
+        ),
+    )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=DEFAULT_ITERATIONS,
+        help=f"Loop count. Default: {DEFAULT_ITERATIONS}",
+    )
+    parser.add_argument(
+        "--device-id",
+        default=DEFAULT_DEVICE_ID,
+        help=f"ADB device id. Default: {DEFAULT_DEVICE_ID}",
+    )
+    parser.add_argument(
+        "--power-port",
+        default=DEFAULT_POWER_PORT,
+        help=(
+            "Programmable power supply serial port. "
+            f"Default: {DEFAULT_POWER_PORT}"
+        ),
+    )
+    parser.add_argument(
+        "--baudrate",
+        type=int,
+        default=DEFAULT_BAUDRATE,
+        help=f"Power supply baudrate. Default: {DEFAULT_BAUDRATE}",
+    )
+    parser.add_argument(
+        "--voltage",
+        type=float,
+        default=DEFAULT_VOLTAGE,
+        help=f"Power-on voltage. Default: {DEFAULT_VOLTAGE}",
+    )
+    parser.add_argument(
+        "--current",
+        type=float,
+        default=DEFAULT_CURRENT,
+        help=f"Current limit. Default: {DEFAULT_CURRENT}",
+    )
+    parser.add_argument(
+        "--power-off-wait",
+        type=float,
+        default=DEFAULT_POWER_OFF_WAIT_SECONDS,
+        help=(
+            "Wait seconds after power off. "
+            f"Default: {DEFAULT_POWER_OFF_WAIT_SECONDS}"
+        ),
+    )
+    parser.add_argument(
+        "--power-on-wait",
+        type=float,
+        default=DEFAULT_POWER_ON_WAIT_SECONDS,
+        help=(
+            "Wait seconds after power on. "
+            f"Default: {DEFAULT_POWER_ON_WAIT_SECONDS}"
+        ),
+    )
+    parser.add_argument(
+        "--power-off-max-voltage",
+        type=float,
+        default=DEFAULT_POWER_OFF_MAX_VOLTAGE,
+        help=(
+            "Max voltage allowed after power off. "
+            f"Default: {DEFAULT_POWER_OFF_MAX_VOLTAGE}"
+        ),
+    )
+    parser.add_argument(
+        "--power-on-tolerance",
+        type=float,
+        default=DEFAULT_POWER_ON_TOLERANCE,
+        help=(
+            "Allowed voltage tolerance after power on. "
+            f"Default: +/-{DEFAULT_POWER_ON_TOLERANCE}"
+        ),
+    )
+    parser.add_argument(
+        "--ota-kill-start-percent",
+        type=int,
+        default=DEFAULT_OTA_KILL_START_PERCENT,
+        help=(
+            "OTA kill start percent. "
+            f"Default: {DEFAULT_OTA_KILL_START_PERCENT}"
+        ),
+    )
+    parser.add_argument(
+        "--ota-kill-end-percent",
+        type=int,
+        default=DEFAULT_OTA_KILL_END_PERCENT,
+        help=(
+            "OTA kill end percent. "
+            f"Default: {DEFAULT_OTA_KILL_END_PERCENT}"
+        ),
+    )
+    parser.add_argument(
+        "--ota-kill-step-percent",
+        type=int,
+        default=DEFAULT_OTA_KILL_STEP_PERCENT,
+        help=(
+            "OTA kill step percent. "
+            f"Default: {DEFAULT_OTA_KILL_STEP_PERCENT}"
+        ),
+    )
+    parser.add_argument(
+        "--ota-monitor-timeout",
+        type=int,
+        default=DEFAULT_OTA_MONITOR_TIMEOUT_SECONDS,
+        help=(
+            "OTA monitor timeout seconds. "
+            f"Default: {DEFAULT_OTA_MONITOR_TIMEOUT_SECONDS}"
+        ),
+    )
+    parser.add_argument(
+        "--log-dir",
+        default=DEFAULT_LOG_DIR,
+        help=f"Output log directory. Default: {DEFAULT_LOG_DIR}",
+    )
+    parser.add_argument(
+        "--stop-on-fail",
+        action="store_true",
+        help="Stop immediately after a failed iteration.",
+    )
     return parser.parse_args()
 
 
@@ -743,7 +943,11 @@ def main() -> int:
     logger = setup_logger(text_log)
 
     bletools = NiuBleTools(device_id=args.device_id, logger=logger)
-    power = ItechIt6121B(port=args.power_port, baudrate=args.baudrate, logger=logger)
+    power = ItechIt6121B(
+        port=args.power_port,
+        baudrate=args.baudrate,
+        logger=logger,
+    )
     state: dict[str, Any] = {
         "stress_name": "idle",
         "current_item": "-",
@@ -753,8 +957,17 @@ def main() -> int:
         "last_result": "N/A",
     }
 
-    logger.info("Start test: iterations=%s, voltage=%.3fV, current=%.3fA", args.iterations, args.voltage, args.current)
-    logger.info("Stress mode=%s (0=stress1+stress2, 1=OTA kill app, 2=power-cycle read)", args.stress_mode)
+    logger.info(
+        "Start test: iterations=%s, voltage=%.3fV, current=%.3fA",
+        args.iterations,
+        args.voltage,
+        args.current,
+    )
+    logger.info(
+        "Stress mode=%s (0=stress1+stress2, "
+        "1=OTA kill app, 2=power-cycle read)",
+        args.stress_mode,
+    )
     logger.info("Target commands: %s", ", ".join(TARGET_COMMANDS.values()))
     awake_guard = WindowsAwakeGuard(logger)
     awake_guard.enable()
@@ -767,16 +980,34 @@ def main() -> int:
         total_fail = 0
 
         if args.stress_mode in (0, 1):
-            pass_count, fail_count = run_ota_kill_app_stress(args, logger, csv_log, bletools, power, state)
+            pass_count, fail_count = run_ota_kill_app_stress(
+                args,
+                logger,
+                csv_log,
+                bletools,
+                power,
+                state,
+            )
             total_pass += pass_count
             total_fail += fail_count
 
         if args.stress_mode in (0, 2):
-            pass_count, fail_count = run_power_cycle_read_stress(args, logger, csv_log, bletools, power, state)
+            pass_count, fail_count = run_power_cycle_read_stress(
+                args,
+                logger,
+                csv_log,
+                bletools,
+                power,
+                state,
+            )
             total_pass += pass_count
             total_fail += fail_count
 
-        logger.info("Finished all selected stress tests: pass=%s, fail=%s", total_pass, total_fail)
+        logger.info(
+            "Finished all selected stress tests: pass=%s, fail=%s",
+            total_pass,
+            total_fail,
+        )
         return 0 if total_fail == 0 else 1
     except KeyboardInterrupt:
         log_interrupt_summary(logger, state)
