@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+"""ADB automation helpers for NIU Ble Tools app.
+
+Author: Kawhi.He
+"""
+
 import json
 import logging
 import queue
@@ -27,13 +32,39 @@ TARGET_COMMANDS = {
 
 
 class NiuBleTools:
+    """Automation wrapper around NIU Ble Tools Android UI and logs.
+
+    Author: Kawhi.He
+    """
+
     def __init__(self, device_id: str = DEVICE_ID, logger: logging.Logger | None = None):
+        """Initialize NIU Ble Tools automation client.
+
+        Author: Kawhi.He
+
+        Args:
+            device_id (str): Target Android device serial id used by adb.
+            logger (logging.Logger | None): Optional logger for structured logs.
+
+        Returns:
+            None.
+        """
         self.device_id = device_id
         self.logger = logger
         self.read_commands_selected = False
         self.last_app_log_lines: list[str] = []
 
     def force_stop_app(self) -> None:
+        """Force-stop the app and clear local UI/log state cache.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         self.log("INFO", "Force-stop NIUBleTools app")
         self.run_adb("shell", "am", "force-stop", APP_PACKAGE)
         self.read_commands_selected = False
@@ -41,6 +72,19 @@ class NiuBleTools:
         time.sleep(0.5)
 
     def run_adb(self, *args: str, timeout: int = 30, retries: int = 3, retry_delay: float = 2.0) -> str:
+        """Run an adb command and return text output with retry on failures.
+
+        Author: Kawhi.He
+
+        Args:
+            *args (str): adb command arguments after "adb -s <device_id>".
+            timeout (int): Timeout in seconds for one adb execution.
+            retries (int): Number of retry attempts for failed adb calls.
+            retry_delay (float): Delay in seconds between retry attempts.
+
+        Returns:
+            Standard output text without trailing whitespace.
+        """
         last_exc: Exception | None = None
         for attempt in range(1, retries + 1):
             try:
@@ -61,6 +105,17 @@ class NiuBleTools:
         raise last_exc  # type: ignore[misc]
 
     def run_adb_bytes(self, *args: str, timeout: int = 30) -> bytes:
+        """Run an adb command and return raw bytes output.
+
+        Author: Kawhi.He
+
+        Args:
+            *args (str): adb command arguments after "adb -s <device_id>".
+            timeout (int): Timeout in seconds for adb execution.
+
+        Returns:
+            Raw bytes from adb stdout.
+        """
         result = subprocess.run(
             ["adb", "-s", self.device_id, *args],
             check=True,
@@ -70,6 +125,16 @@ class NiuBleTools:
         return result.stdout
 
     def check_device(self) -> None:
+        """Validate that target adb device is online and authorized.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         devices = subprocess.run(
             ["adb", "devices"],
             check=True,
@@ -81,21 +146,61 @@ class NiuBleTools:
             raise RuntimeError(f"ADB device is not connected or authorized: {self.device_id}")
 
     def dump_ui(self) -> ET.Element:
+        """Dump current Android UI hierarchy and parse it as XML tree.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            Root XML element of current screen hierarchy.
+        """
         self.run_adb("shell", "uiautomator", "dump", "/sdcard/window.xml", timeout=10)
         xml_bytes = self.run_adb_bytes("exec-out", "cat", "/sdcard/window.xml")
         return ET.fromstring(xml_bytes.decode("utf-8", errors="replace"))
 
     def open_app(self) -> None:
+        """Launch the NIU Ble Tools main activity.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         self.log("INFO", "Open NIUBleTools app")
         self.run_adb("shell", "am", "start", "-W", "-n", f"{APP_PACKAGE}/{MAIN_ACTIVITY}")
         self.read_commands_selected = False
         time.sleep(0.8)
 
     def open_app_fresh(self) -> None:
+        """Restart app from a clean state by force-stop then open.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         self.force_stop_app()
         self.open_app()
 
     def return_home_if_needed(self) -> None:
+        """Navigate back until app home page is reached or retries exhausted.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         for _ in range(4):
             root = self.dump_ui()
             if self.find_node_by_text(root, TARGET_MENU_TEXT) is not None and self.find_node_by_text(root, OTA_MENU_TEXT) is not None:
@@ -104,6 +209,16 @@ class NiuBleTools:
             time.sleep(0.4)
 
     def enter_radar_rcu_page(self) -> None:
+        """Enter the Radar RCU validation page from app home page.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         self.return_home_if_needed()
         root = self.dump_ui()
         if self.find_node_by_text(root, TARGET_MENU_TEXT) is not None and self.find_node_by_id(root, self.id("connectBtn")) is not None:
@@ -125,6 +240,16 @@ class NiuBleTools:
         raise RuntimeError("Timed out waiting for Radar RCU page")
 
     def enter_ota_page(self) -> None:
+        """Enter the OTA upgrade page from app home page.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         self.return_home_if_needed()
         root = self.dump_ui()
         if self.find_node_by_text(root, OTA_MENU_TEXT) is not None and self.find_node_by_id(root, self.id("otaStart")) is not None:
@@ -146,6 +271,16 @@ class NiuBleTools:
         raise RuntimeError("Timed out waiting for OTA page")
 
     def connect_ble(self) -> None:
+        """Connect BLE device and wait for successful connection log.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         self.log("INFO", "Connect BLE")
         self.tap_by_id(self.id("disConnectBtn"), "断开")
         time.sleep(0.3)
@@ -157,6 +292,16 @@ class NiuBleTools:
         self.log("INFO", "BLE connected successfully")
 
     def read_radar_rcu_values(self) -> tuple[dict[str, str], str]:
+        """Read target Radar RCU command values from app logs.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            A tuple of parsed value dictionary and full final app log text.
+        """
         self.log("INFO", "Read Radar RCU command values")
         previous_log = self.read_log()
         self.tap_by_id(self.id("readCmdTestBtn"), "读指令")
@@ -184,6 +329,16 @@ class NiuBleTools:
         return values, final_log
 
     def ensure_read_commands_selected(self) -> None:
+        """Ensure required command checkboxes are selected once.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         if self.read_commands_selected:
             self.log("INFO", "Read command options already selected; skip toggling selections")
             return
@@ -193,6 +348,16 @@ class NiuBleTools:
         self.read_commands_selected = True
 
     def select_ota_radar_device(self) -> None:
+        """Select the OTA target device item named "外设-雷达".
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         self.tap_by_id(self.id("chooseDeviceBtn"), "选择设备")
         time.sleep(0.5)
 
@@ -209,22 +374,64 @@ class NiuBleTools:
         raise RuntimeError("OTA device option not found: 外设-雷达")
 
     def prepare_ota_upgrade(self) -> None:
+        """Prepare OTA page state before starting an OTA session.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         self.open_app_fresh()
         self.enter_ota_page()
         self.connect_ble()
         self.select_ota_radar_device()
 
     def start_ota_upgrade(self) -> None:
+        """Clear logcat and press OTA start button in app.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         self.run_adb("logcat", "-c")
         self.tap_by_id(self.id("otaStart"), "开始")
         time.sleep(0.3)
 
     def kill_app_at_ota_progress(self, target_percent: int, timeout_seconds: int = 180) -> float:
+        """Kill app when OTA packet progress reaches target percentage.
+
+        Author: Kawhi.He
+
+        Args:
+            target_percent (int): Target OTA progress percentage.
+            timeout_seconds (int): Max wait time for progress monitoring.
+
+        Returns:
+            Progress percentage when trigger happened.
+        """
         self.log("INFO", f"Wait OTA progress >= {target_percent}% then kill app")
         progress = self.monitor_ota_progress(target_percent=target_percent, timeout_seconds=timeout_seconds, kill_on_target=True)
         return progress
 
     def kill_app_at_ota_elapsed_percent(self, target_percent: int, baseline_seconds: float) -> float:
+        """Kill app after elapsed time proportional to baseline OTA duration.
+
+        Author: Kawhi.He
+
+        Args:
+            target_percent (int): Percentage of baseline duration to wait.
+            baseline_seconds (float): Baseline full OTA duration in seconds.
+
+        Returns:
+            Actual elapsed seconds when app was force-stopped.
+        """
         target_delay = baseline_seconds * target_percent / 100.0
         self.log("INFO", f"Start OTA and kill app after {target_delay:.3f}s ({target_percent}% of baseline {baseline_seconds:.3f}s)")
         start_time = time.monotonic()
@@ -237,6 +444,17 @@ class NiuBleTools:
         return elapsed_seconds
 
     def run_ota_upgrade_to_success(self, timeout_seconds: int = 180, max_retries: int = 3) -> float:
+        """Run OTA until success marker appears or retries are exhausted.
+
+        Author: Kawhi.He
+
+        Args:
+            timeout_seconds (int): Timeout per monitoring attempt in seconds.
+            max_retries (int): Maximum monitor retries on timeout/failure.
+
+        Returns:
+            Elapsed OTA execution time in seconds.
+        """
         self.log("INFO", "Run OTA upgrade to success")
         start_time = time.monotonic()
         self.start_ota_upgrade()
@@ -257,6 +475,18 @@ class NiuBleTools:
                     raise
 
     def monitor_ota_progress(self, target_percent: int | None, timeout_seconds: int, kill_on_target: bool) -> float:
+        """Monitor OTA progress from logcat and optionally kill app on target.
+
+        Author: Kawhi.He
+
+        Args:
+            target_percent (int | None): Target progress threshold, or None to wait for success.
+            timeout_seconds (int): Maximum monitoring duration in seconds.
+            kill_on_target (bool): Whether to force-stop app when target is reached.
+
+        Returns:
+            Final progress percentage captured from logs.
+        """
         process = self._start_logcat_process()
         deadline = time.time() + timeout_seconds
         last_progress = 0.0
@@ -265,6 +495,16 @@ class NiuBleTools:
         last_output_time = time.time()
 
         def read_logcat_stdout() -> None:
+            """Read logcat stdout continuously and enqueue each line.
+
+            Author: Kawhi.He
+
+            Args:
+                None.
+
+            Returns:
+                None.
+            """
             if process.stdout is None:
                 return
             for line in process.stdout:
@@ -312,6 +552,16 @@ class NiuBleTools:
                 process.kill()
 
     def _start_logcat_process(self) -> subprocess.Popen:
+        """Start filtered logcat process for OTA-related tags.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            A running subprocess.Popen instance.
+        """
         return subprocess.Popen(
             ["adb", "-s", self.device_id, "logcat", "-v", "time", "NiuBleOtaManager:E", "BleOtaActivity:I", "*:S"],
             stdout=subprocess.PIPE,
@@ -321,6 +571,17 @@ class NiuBleTools:
         )
 
     def _restart_logcat(self, old_process: subprocess.Popen, line_queue: queue.Queue) -> subprocess.Popen:
+        """Restart logcat process and clear cached pending lines.
+
+        Author: Kawhi.He
+
+        Args:
+            old_process (subprocess.Popen): Existing logcat process to terminate.
+            line_queue (queue.Queue): Queue that buffers stdout lines from old process.
+
+        Returns:
+            Newly created logcat subprocess.
+        """
         old_process.terminate()
         try:
             old_process.wait(timeout=2)
@@ -336,6 +597,16 @@ class NiuBleTools:
 
     @staticmethod
     def parse_ota_packet_progress(line: str) -> float | None:
+        """Parse OTA packet-style progress text from one log line.
+
+        Author: Kawhi.He
+
+        Args:
+            line (str): Single logcat line text.
+
+        Returns:
+            Progress percentage in range [0, 100], or None if not matched.
+        """
         match = re.search(r"\b(\d+)/(\d+)\s*-->", line)
         if not match:
             return None
@@ -346,6 +617,16 @@ class NiuBleTools:
         return max(0.0, min(100.0, current * 100.0 / total))
 
     def read_log(self) -> str:
+        """Read visible app result log text from current screen.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            Current text from result view.
+        """
         root = self.dump_ui()
         node = self.find_node_by_id(root, self.id("resultTv"))
         log_text = "" if node is None else node.attrib.get("text", "")
@@ -353,6 +634,17 @@ class NiuBleTools:
         return log_text
 
     def wait_log_contains(self, text: str, timeout_seconds: int) -> str:
+        """Poll app log until a target substring appears.
+
+        Author: Kawhi.He
+
+        Args:
+            text (str): Target substring expected in app log.
+            timeout_seconds (int): Max wait duration in seconds.
+
+        Returns:
+            Last log text that contains the target substring.
+        """
         deadline = time.time() + timeout_seconds
         last_log = ""
         while time.time() < deadline:
@@ -363,6 +655,17 @@ class NiuBleTools:
         raise RuntimeError(f"Timed out waiting for log text: {text}\nLast log:\n{last_log[-1000:]}")
 
     def wait_read_result(self, previous_log: str, timeout_seconds: int) -> str:
+        """Wait for a new read-command result block to appear in app log.
+
+        Author: Kawhi.He
+
+        Args:
+            previous_log (str): Baseline log content before triggering read.
+            timeout_seconds (int): Maximum wait duration in seconds.
+
+        Returns:
+            Updated log text that includes read result data.
+        """
         deadline = time.time() + timeout_seconds
         last_log = previous_log
         while time.time() < deadline:
@@ -374,6 +677,17 @@ class NiuBleTools:
         raise RuntimeError(f"Timed out waiting for read result\nLast log:\n{last_log[-1000:]}")
 
     def select_command_by_key(self, command_key: str, label: str) -> None:
+        """Find and tap one command option in command list dialog.
+
+        Author: Kawhi.He
+
+        Args:
+            command_key (str): Internal command key text shown by app.
+            label (str): Human-readable command label for logging/errors.
+
+        Returns:
+            None.
+        """
         for _attempt in range(12):
             root = self.dump_ui()
             found = self.find_node_and_parent_by_text(root, command_key)
@@ -389,6 +703,16 @@ class NiuBleTools:
 
     @staticmethod
     def parse_received_values(log_text: str) -> dict[str, str]:
+        """Extract latest JSON payload from app log and decode to dict.
+
+        Author: Kawhi.He
+
+        Args:
+            log_text (str): Full app result log text.
+
+        Returns:
+            Parsed key-value dictionary, or empty dict when not found.
+        """
         matches = re.findall(r"收到:(\{.*?\})", log_text)
         if not matches:
             return {}
@@ -399,22 +723,63 @@ class NiuBleTools:
 
     @staticmethod
     def id(short_id: str) -> str:
+        """Build full Android resource-id using app package prefix.
+
+        Author: Kawhi.He
+
+        Args:
+            short_id (str): Short resource-id name, for example "connectBtn".
+
+        Returns:
+            Full resource-id string.
+        """
         return f"{APP_PACKAGE}:id/{short_id}"
 
     @staticmethod
     def iter_nodes(root: ET.Element):
+        """Yield all nodes in depth-first order.
+
+        Author: Kawhi.He
+
+        Args:
+            root (ET.Element): XML root element.
+
+        Returns:
+            A generator yielding XML elements.
+        """
         yield root
         for child in root:
             yield from NiuBleTools.iter_nodes(child)
 
     @staticmethod
     def iter_nodes_with_parent(root: ET.Element, parent: ET.Element | None = None):
+        """Yield all nodes in depth-first order with parent reference.
+
+        Author: Kawhi.He
+
+        Args:
+            root (ET.Element): XML root element.
+            parent (ET.Element | None): Parent node of current root, if available.
+
+        Returns:
+            A generator yielding (node, parent) tuples.
+        """
         yield root, parent
         for child in root:
             yield from NiuBleTools.iter_nodes_with_parent(child, root)
 
     @staticmethod
     def parse_bounds(bounds: str) -> tuple[int, int, int, int]:
+        """Parse Android bounds string into integer rectangle tuple.
+
+        Author: Kawhi.He
+
+        Args:
+            bounds (str): Bounds text like "[0,100][1080,200]".
+
+        Returns:
+            Tuple of (left, top, right, bottom).
+        """
         nums = [int(value) for value in re.findall(r"\d+", bounds)]
         if len(nums) != 4:
             raise ValueError(f"Cannot parse bounds: {bounds}")
@@ -422,11 +787,32 @@ class NiuBleTools:
 
     @classmethod
     def node_center(cls, node: ET.Element) -> tuple[int, int]:
+        """Compute center point coordinates for a UI node bounds box.
+
+        Author: Kawhi.He
+
+        Args:
+            node (ET.Element): XML node containing "bounds" attribute.
+
+        Returns:
+            Center coordinates as (x, y).
+        """
         left, top, right, bottom = cls.parse_bounds(node.attrib["bounds"])
         return (left + right) // 2, (top + bottom) // 2
 
     @classmethod
     def find_node_by_id(cls, root: ET.Element, resource_id: str) -> ET.Element | None:
+        """Find first node whose resource-id matches target.
+
+        Author: Kawhi.He
+
+        Args:
+            root (ET.Element): XML root element.
+            resource_id (str): Full Android resource-id to match.
+
+        Returns:
+            Matching XML node, or None if no match.
+        """
         for node in cls.iter_nodes(root):
             if node.attrib.get("resource-id") == resource_id:
                 return node
@@ -434,6 +820,17 @@ class NiuBleTools:
 
     @classmethod
     def find_node_by_text(cls, root: ET.Element, text: str) -> ET.Element | None:
+        """Find first node whose visible text contains target string.
+
+        Author: Kawhi.He
+
+        Args:
+            root (ET.Element): XML root element.
+            text (str): Substring to search in node text field.
+
+        Returns:
+            Matching XML node, or None if no match.
+        """
         for node in cls.iter_nodes(root):
             if text in node.attrib.get("text", ""):
                 return node
@@ -441,17 +838,50 @@ class NiuBleTools:
 
     @classmethod
     def find_node_and_parent_by_text(cls, root: ET.Element, text: str) -> tuple[ET.Element, ET.Element | None] | None:
+        """Find first node containing text and also return its parent node.
+
+        Author: Kawhi.He
+
+        Args:
+            root (ET.Element): XML root element.
+            text (str): Substring to search in node text field.
+
+        Returns:
+            Tuple of (node, parent) or None if no match.
+        """
         for node, parent in cls.iter_nodes_with_parent(root):
             if text in node.attrib.get("text", ""):
                 return node, parent
         return None
 
     def tap_node(self, node: ET.Element, label: str) -> None:
+        """Tap screen center of provided UI node bounds.
+
+        Author: Kawhi.He
+
+        Args:
+            node (ET.Element): Target XML node.
+            label (str): Human-readable label used in debug logs.
+
+        Returns:
+            None.
+        """
         x, y = self.node_center(node)
         self.log("DEBUG", f"Tap {label}: ({x}, {y})")
         self.run_adb("shell", "input", "tap", str(x), str(y))
 
     def tap_by_id(self, resource_id: str, label: str) -> None:
+        """Find node by resource-id and tap it.
+
+        Author: Kawhi.He
+
+        Args:
+            resource_id (str): Full Android resource-id.
+            label (str): Human-readable label for error/log message.
+
+        Returns:
+            None.
+        """
         root = self.dump_ui()
         node = self.find_node_by_id(root, resource_id)
         if node is None:
@@ -459,12 +889,33 @@ class NiuBleTools:
         self.tap_node(node, label)
 
     def log(self, level: str, message: str) -> None:
+        """Output a log line via injected logger or stdout fallback.
+
+        Author: Kawhi.He
+
+        Args:
+            level (str): Logging level name, for example "INFO".
+            message (str): Log content text.
+
+        Returns:
+            None.
+        """
         if self.logger is None:
             print(message, flush=True)
             return
         self.logger.log(getattr(logging, level), message)
 
     def emit_new_app_log_lines(self, log_text: str) -> None:
+        """Emit incremental app log lines at APP_LOG level only once.
+
+        Author: Kawhi.He
+
+        Args:
+            log_text (str): Full current app log text from UI.
+
+        Returns:
+            None.
+        """
         if not log_text or self.logger is None:
             return
 

@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+"""Programmable power supply control helpers.
+
+Author: Kawhi.He
+"""
+
 import datetime
 import logging
 import sys
@@ -8,6 +13,11 @@ import serial
 
 
 class ItechIt6121B:
+    """SCPI wrapper for ITECH IT6121B programmable power supply.
+
+    Author: Kawhi.He
+    """
+
     def __init__(
         self,
         port: str,
@@ -16,6 +26,20 @@ class ItechIt6121B:
         log_file: str = "power_supply_test.log",
         logger: logging.Logger | None = None,
     ):
+        """Initialize the power supply controller.
+
+        Author: Kawhi.He
+
+        Args:
+            port (str): Serial port name, for example "COM25".
+            baudrate (int): Serial baudrate used by the power supply.
+            timeout (float): Read timeout for serial communication in seconds.
+            log_file (str): Fallback local log file path when no logger is provided.
+            logger (logging.Logger | None): Optional Python logger instance.
+
+        Returns:
+            None.
+        """
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
@@ -25,9 +49,29 @@ class ItechIt6121B:
 
     @property
     def is_connected(self) -> bool:
+        """Check whether the serial connection is currently open.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            True if connected; otherwise False.
+        """
         return self.ser is not None and self.ser.is_open
 
     def connect(self) -> None:
+        """Open serial port and switch the power supply to remote mode.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         self.ser = serial.Serial(
             port=self.port,
             baudrate=self.baudrate,
@@ -45,6 +89,16 @@ class ItechIt6121B:
         self.log(f"[OK] Power supply ID: {device_id}")
 
     def send_cmd(self, cmd: str) -> None:
+        """Send a command without expecting a response.
+
+        Author: Kawhi.He
+
+        Args:
+            cmd (str): SCPI command string.
+
+        Returns:
+            None.
+        """
         if not self.is_connected:
             raise RuntimeError("Power supply is not connected")
         assert self.ser is not None
@@ -52,6 +106,16 @@ class ItechIt6121B:
         time.sleep(0.05)
 
     def query(self, cmd: str) -> str:
+        """Send a command and return one-line response string.
+
+        Author: Kawhi.He
+
+        Args:
+            cmd (str): SCPI query command string.
+
+        Returns:
+            Device response text with trailing spaces/newlines removed.
+        """
         self.send_cmd(cmd)
         assert self.ser is not None
         response = self.ser.readline().decode("utf-8", errors="replace").strip()
@@ -59,6 +123,17 @@ class ItechIt6121B:
         return response
 
     def configure_output(self, voltage: float = 12.0, current: float = 3.0) -> None:
+        """Configure output voltage and current limit.
+
+        Author: Kawhi.He
+
+        Args:
+            voltage (float): Target output voltage in volts.
+            current (float): Current limit in amperes.
+
+        Returns:
+            None.
+        """
         if not 0 <= voltage <= 20.0:
             raise ValueError(f"Voltage out of range: {voltage}")
         if not 0 <= current <= 5.0:
@@ -68,14 +143,44 @@ class ItechIt6121B:
         self.log(f"[POWER] Configured output: {voltage:.3f} V, {current:.3f} A")
 
     def output_on(self) -> None:
+        """Turn on the power output channel.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         self.send_cmd("OUTP 1")
         self.log("[POWER] Output ON")
 
     def output_off(self) -> None:
+        """Turn off the power output channel.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         self.send_cmd("OUTP 0")
         self.log("[POWER] Output OFF")
 
     def read_actual_voltage(self) -> float | None:
+        """Read measured output voltage from the device.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            Measured voltage in volts, or None when parsing/query fails.
+        """
         for cmd in ("MEAS:VOLT?", "MEAS:VOLTAGE?", "VOLT?"):
             try:
                 response = self.query(cmd)
@@ -86,6 +191,16 @@ class ItechIt6121B:
         return None
 
     def read_actual_current(self) -> float | None:
+        """Read measured output current from the device.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            Measured current in amperes, or None when parsing/query fails.
+        """
         for cmd in ("MEAS:CURR?", "MEAS:CURRENT?", "CURR?"):
             try:
                 response = self.query(cmd)
@@ -96,11 +211,31 @@ class ItechIt6121B:
         return None
 
     def close(self) -> None:
+        """Close serial connection if open.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         if self.ser is not None and self.ser.is_open:
             self.ser.close()
             self.log("[OK] Serial port closed")
 
     def log(self, msg: str) -> None:
+        """Write log message to configured logger or fallback file/stdout.
+
+        Author: Kawhi.He
+
+        Args:
+            msg (str): Log message to output.
+
+        Returns:
+            None.
+        """
         if self.logger is not None:
             self.logger.info(msg)
             return

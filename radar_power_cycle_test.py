@@ -3,6 +3,8 @@
 雷达 RCU 压力测试主脚本
 ==========================
 
+Author: Kawhi.He
+
 用途：
     通过 ADB 自动操作手机端 NIU Ble Tools，并通过 ITECH IT6121B 程控电源
     控制雷达断电/上电，完成雷达 RCU 的 OTA 中断恢复和上电后状态读取压力测试。
@@ -132,19 +134,54 @@ DEFAULT_LOG_DIR = "logs"
 
 
 def timestamp() -> str:
+    """Generate current timestamp string in local configured timezone.
+
+    Author: Kawhi.He
+
+    Args:
+        None.
+
+    Returns:
+        ISO-8601 timestamp string with milliseconds.
+    """
     return datetime.datetime.now(LOCAL_TZ).isoformat(timespec="milliseconds")
 
 
 class WindowsAwakeGuard:
+    """Prevent Windows system sleep/display-off while test is running.
+
+    Author: Kawhi.He
+    """
+
     HEARTBEAT_INTERVAL = 30
 
     def __init__(self, logger: logging.Logger) -> None:
+        """Initialize awake guard state.
+
+        Author: Kawhi.He
+
+        Args:
+            logger (logging.Logger): Logger for status and warning output.
+
+        Returns:
+            None.
+        """
         self.logger = logger
         self.enabled = False
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
     def enable(self) -> None:
+        """Enable periodic execution-state refresh on Windows platforms.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         if sys.platform != "win32":
             return
         flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
@@ -159,6 +196,16 @@ class WindowsAwakeGuard:
         self.logger.info("Windows awake guard enabled: prevent sleep and display off while test is running")
 
     def disable(self) -> None:
+        """Disable awake guard and restore default Windows execution state.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         if not self.enabled or sys.platform != "win32":
             return
         self._stop_event.set()
@@ -173,20 +220,56 @@ class WindowsAwakeGuard:
         self.logger.info("Windows awake guard disabled")
 
     def _heartbeat(self) -> None:
+        """Refresh Windows execution-state flags on fixed intervals.
+
+        Author: Kawhi.He
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         while not self._stop_event.wait(self.HEARTBEAT_INTERVAL):
             flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
             ctypes.windll.kernel32.SetThreadExecutionState(flags)
 
 
 class TimezoneFormatter(logging.Formatter):
+    """Logging formatter that emits timestamps in configured local timezone.
+
+    Author: Kawhi.He
+    """
+
     converter = None
 
     def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        """Format log record creation time using LOCAL_TZ timezone.
+
+        Author: Kawhi.He
+
+        Args:
+            record (logging.LogRecord): Logging record to format.
+            datefmt (str | None): Optional date format string (unused, kept for compatibility).
+
+        Returns:
+            Formatted ISO timestamp with milliseconds.
+        """
         dt = datetime.datetime.fromtimestamp(record.created, LOCAL_TZ)
         return dt.isoformat(timespec="milliseconds")
 
 
 def setup_logger(log_file: Path) -> logging.Logger:
+    """Create configured logger with file and console handlers.
+
+    Author: Kawhi.He
+
+    Args:
+        log_file (Path): Path to detailed run log file.
+
+    Returns:
+        Configured logger instance used by this test suite.
+    """
     logger = logging.getLogger("radar_power_cycle")
     logger.setLevel(logging.DEBUG)
     logger.handlers.clear()
@@ -209,6 +292,17 @@ def setup_logger(log_file: Path) -> logging.Logger:
 
 
 def log_app(logger: logging.Logger, app_log: str) -> None:
+    """Compatibility wrapper for app log output.
+
+    Author: Kawhi.He
+
+    Args:
+        logger (logging.Logger): Logger used for output.
+        app_log (str): Full app log text.
+
+    Returns:
+        None.
+    """
     # NiuBleTools.read_log() already emits incremental APP_LOG lines.
     # Keep this helper for compatibility, but avoid duplicating large APP logs.
     return
@@ -217,6 +311,16 @@ def log_app(logger: logging.Logger, app_log: str) -> None:
 
 
 def build_status_line(state: dict[str, Any]) -> str:
+    """Build one-line readable progress summary from runtime state.
+
+    Author: Kawhi.He
+
+    Args:
+        state (dict[str, Any]): Mutable status dictionary shared by stress flows.
+
+    Returns:
+        Human-readable status line string.
+    """
     return (
         f"stress={state.get('stress_name', 'unknown')}, "
         f"current={state.get('current_item', '-')}, "
@@ -228,11 +332,33 @@ def build_status_line(state: dict[str, Any]) -> str:
 
 
 def log_interrupt_summary(logger: logging.Logger, state: dict[str, Any]) -> None:
+    """Log summary when user interrupts execution with Ctrl+C.
+
+    Author: Kawhi.He
+
+    Args:
+        logger (logging.Logger): Logger used for writing interruption details.
+        state (dict[str, Any]): Runtime status dictionary.
+
+    Returns:
+        None.
+    """
     logger.warning("Interrupted by CTRL+C")
     logger.warning("Current status: %s", build_status_line(state))
 
 
 def append_csv_row(path: Path, row: dict[str, object]) -> None:
+    """Append one structured result row into CSV file.
+
+    Author: Kawhi.He
+
+    Args:
+        path (Path): CSV file path.
+        row (dict[str, object]): Row dictionary following predefined field names.
+
+    Returns:
+        None.
+    """
     fieldnames = [
         "time",
         "stress",
@@ -256,6 +382,16 @@ def append_csv_row(path: Path, row: dict[str, object]) -> None:
 
 
 def read_radar_once(bletools: NiuBleTools) -> tuple[dict[str, str], str]:
+    """Open app, enter radar page, connect BLE, and read target values once.
+
+    Author: Kawhi.He
+
+    Args:
+        bletools (NiuBleTools): NIU app automation helper instance.
+
+    Returns:
+        Tuple of parsed command values and raw final app log.
+    """
     bletools.open_app()
     bletools.enter_radar_rcu_page()
     bletools.connect_ble()
@@ -263,6 +399,16 @@ def read_radar_once(bletools: NiuBleTools) -> tuple[dict[str, str], str]:
 
 
 def read_voltage_or_raise(power: ItechIt6121B) -> float:
+    """Read actual voltage and raise exception when reading fails.
+
+    Author: Kawhi.He
+
+    Args:
+        power (ItechIt6121B): Programmable power controller instance.
+
+    Returns:
+        Measured voltage in volts.
+    """
     voltage = power.read_actual_voltage()
     if voltage is None:
         raise RuntimeError("Failed to read actual voltage from power supply")
@@ -270,6 +416,18 @@ def read_voltage_or_raise(power: ItechIt6121B) -> float:
 
 
 def assert_power_off(power: ItechIt6121B, max_voltage: float, logger: logging.Logger) -> float:
+    """Validate power-off state by checking voltage below threshold.
+
+    Author: Kawhi.He
+
+    Args:
+        power (ItechIt6121B): Programmable power controller instance.
+        max_voltage (float): Maximum acceptable voltage in off state.
+        logger (logging.Logger): Logger used for detailed measurement logs.
+
+    Returns:
+        Measured voltage after power off.
+    """
     voltage = read_voltage_or_raise(power)
     current = power.read_actual_current()
     logger.debug("Measured after power off: voltage=%.3f V, current=%s A", voltage, "N/A" if current is None else f"{current:.3f}")
@@ -279,6 +437,19 @@ def assert_power_off(power: ItechIt6121B, max_voltage: float, logger: logging.Lo
 
 
 def assert_power_on(power: ItechIt6121B, expected_voltage: float, tolerance: float, logger: logging.Logger) -> float:
+    """Validate power-on state by checking voltage around target range.
+
+    Author: Kawhi.He
+
+    Args:
+        power (ItechIt6121B): Programmable power controller instance.
+        expected_voltage (float): Desired output voltage target.
+        tolerance (float): Allowed absolute deviation from expected voltage.
+        logger (logging.Logger): Logger used for detailed measurement logs.
+
+    Returns:
+        Measured voltage after power on.
+    """
     voltage = read_voltage_or_raise(power)
     current = power.read_actual_current()
     logger.debug("Measured after power on: voltage=%.3f V, current=%s A", voltage, "N/A" if current is None else f"{current:.3f}")
@@ -290,6 +461,18 @@ def assert_power_on(power: ItechIt6121B, expected_voltage: float, tolerance: flo
 
 
 def power_cycle_and_verify(power: ItechIt6121B, args: argparse.Namespace, logger: logging.Logger) -> tuple[float, float]:
+    """Perform one full power off/on sequence and verify voltages.
+
+    Author: Kawhi.He
+
+    Args:
+        power (ItechIt6121B): Programmable power controller instance.
+        args (argparse.Namespace): Parsed CLI args containing power timing and threshold settings.
+        logger (logging.Logger): Logger used for progress and measurements.
+
+    Returns:
+        Tuple of (off_voltage, on_voltage).
+    """
     logger.info("Power OFF")
     power.output_off()
     time.sleep(args.power_off_wait)
@@ -306,6 +489,16 @@ def power_cycle_and_verify(power: ItechIt6121B, args: argparse.Namespace, logger
 
 
 def reset_app_selection_state(bletools: NiuBleTools) -> None:
+    """Reset command-selection cache state in automation helper.
+
+    Author: Kawhi.He
+
+    Args:
+        bletools (NiuBleTools): NIU app automation helper instance.
+
+    Returns:
+        None.
+    """
     bletools.read_commands_selected = False
 
 
@@ -317,6 +510,21 @@ def run_power_cycle_read_stress(
     power: ItechIt6121B,
     state: dict[str, Any],
 ) -> tuple[int, int]:
+    """Run stress mode 2: repeated power cycle and radar value reading.
+
+    Author: Kawhi.He
+
+    Args:
+        args (argparse.Namespace): Parsed CLI arguments.
+        logger (logging.Logger): Logger for runtime information.
+        csv_log (Path): CSV output path.
+        bletools (NiuBleTools): NIU app automation helper.
+        power (ItechIt6121B): Programmable power controller.
+        state (dict[str, Any]): Mutable runtime state dictionary.
+
+    Returns:
+        Tuple of (pass_count, fail_count).
+    """
     logger.info("===== Start stress 2: power-cycle read Radar RCU values =====")
     pass_count = 0
     fail_count = 0
@@ -381,6 +589,21 @@ def run_ota_kill_app_stress(
     power: ItechIt6121B,
     state: dict[str, Any],
 ) -> tuple[int, int]:
+    """Run stress mode 1: timed OTA interruption and recovery verification.
+
+    Author: Kawhi.He
+
+    Args:
+        args (argparse.Namespace): Parsed CLI arguments.
+        logger (logging.Logger): Logger for runtime information.
+        csv_log (Path): CSV output path.
+        bletools (NiuBleTools): NIU app automation helper.
+        power (ItechIt6121B): Programmable power controller.
+        state (dict[str, Any]): Mutable runtime state dictionary.
+
+    Returns:
+        Tuple of (pass_count, fail_count).
+    """
     logger.info("===== Start stress 1: OTA timed kill-app every percent =====")
     pass_count = 0
     fail_count = 0
@@ -467,6 +690,16 @@ def run_ota_kill_app_stress(
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse CLI arguments for stress test execution.
+
+    Author: Kawhi.He
+
+    Args:
+        None.
+
+    Returns:
+        Parsed argparse namespace.
+    """
     parser = argparse.ArgumentParser(description="Radar RCU stress test runner.")
     parser.add_argument("--stress-mode", type=int, choices=(0, 1, 2), default=DEFAULT_STRESS_MODE, help=f"0=run stress 1 and 2, 1=OTA kill app stress, 2=power cycle read stress. Default: {DEFAULT_STRESS_MODE}")
     parser.add_argument("--iterations", type=int, default=DEFAULT_ITERATIONS, help=f"Loop count. Default: {DEFAULT_ITERATIONS}")
@@ -489,6 +722,16 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    """Program entry: initialize resources and run selected stress flows.
+
+    Author: Kawhi.He
+
+    Args:
+        None.
+
+    Returns:
+        Process exit code: 0 success, 1 failures, 130 interrupted.
+    """
     sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
     args = parse_args()
 
